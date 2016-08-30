@@ -1,0 +1,7 @@
+name: flask-peewee-env
+dependencies:
+- python=3
+- flask
+- pip
+- pip:
+    - peewee
