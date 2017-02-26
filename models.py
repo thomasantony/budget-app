@@ -1,12 +1,14 @@
 import datetime
 import calendar
 from peewee import *
-from playhouse.shortcuts import model_to_dict
+from playhouse.shortcuts import *
 from decimal import Decimal
+from flask_peewee.utils import get_dictionary_from_model
 
 from app import db
 
 class BaseModel(Model):
+    """Base class for all models"""
     class Meta:
         database = db
 
@@ -66,13 +68,25 @@ class BudgetPeriod(BaseModel):
         Retrieves budget entries for all categories for current period
         with outflows and balances
         """
-        pass
+        txns = (BudgetEntry.select(BudgetEntry, fn.SUM(Transaction.amount).alias('outflows'), Category)
+                          .join(Category)
+                          .where(Transaction.date.between(
+                                      self.start_date,
+                                      self.start_date
+                                      + datetime.timedelta(days = self.num_days)))
+                          .group_by(Category)
+                          .join(Transaction)
+                          )
+
+        return [{'category': t.category.name, 'outflows': t.outflows,
+                'budgeted': t.budgeted, 'balance': t.budgeted + t.outflows}
+                for t in txns]
 
 class BudgetEntry(BaseModel):
     """One entry in the budget for a period"""
     period = ForeignKeyField(BudgetPeriod, related_name = 'entries')
     category = ForeignKeyField(Category)
-    amount = DecimalField()
+    budgeted = DecimalField()
 
     def get_full_entry(self):
         """Computes outflows and balance for entry based on transactions."""
@@ -84,8 +98,9 @@ class BudgetEntry(BaseModel):
                       self.period.start_date
                       + datetime.timedelta(days = self.period.num_days)
                      )).get()
-        return {'budgeted': self.amount, 'outflows': total.outflows,
-                'balance': self.amount + total.outflows}
+        return {'category': self.category.name, 'budgeted': self.budgeted,
+                'outflows': total.outflows,
+                'balance': self.budgeted + total.outflows}
 
 
 
@@ -112,8 +127,8 @@ if __name__ == '__main__':
                     start_date = today.replace(day=1),
                     num_days = calendar.monthrange(today.year, today.month)[1]
                    )
-    budgetEntry1 = BudgetEntry.create(period=budgetPeriod, category=rent, amount=535.0)
-    budgetEntry2 = BudgetEntry.create(period=budgetPeriod, category=groceries, amount=200.0)
+    budgetEntry1 = BudgetEntry.create(period=budgetPeriod, category=rent, budgeted=535.0)
+    budgetEntry2 = BudgetEntry.create(period=budgetPeriod, category=groceries, budgeted=200.0)
 
     txns.append(Transaction.create(acct_from=acct,
                                     category=rent,
@@ -127,6 +142,8 @@ if __name__ == '__main__':
                                     is_transfer=False,
                                     payee = 'Supermarket')
                 )
-    print([e.category.name+': $'+str(e.amount) for e in budgetPeriod.entries])
-    print(budgetEntry1.get_full_entry())
+    # print([e.category.name+': $'+str(e.amount) for e in budgetPeriod.entries])
+    # print(budgetEntry1.get_full_entry())
+
+    print(budgetPeriod.get_budget())
     db.close()
