@@ -7,18 +7,18 @@ from flask_peewee.utils import get_dictionary_from_model
 
 from app import db
 
-class BaseModel(Model):
-    """Base class for all models"""
-    class Meta:
-        database = db
+# class db.Model(db.Model):
+#     """Base class for all models"""
+#     class Meta:
+#         database = db
 
 
-class Account(BaseModel):
+class Account(db.Model):
     name = CharField(unique=True)
     type = CharField()
     on_budget = BooleanField()
     opening_balance = DecimalField()
-    opening_date = DateField(default=datetime.datetime.now)
+    opening_date = DateField(default=datetime.datetime.now, formats=['%Y-%m-%d'])
 
     def ledger(self):
         """Returns combination of all transactions and transfers"""
@@ -36,8 +36,48 @@ class Account(BaseModel):
             t.running_balance = running_balance
             yield t
 
+    @property
+    def serialize(self):
+        print('serialize yo ass')
+        data = {
+            'id': self.id,
+            'name': str(self.name).strip(),
+            'type': str(self.type).strip(),
+            'on_budget': str(self.on_budget).strip(),
+            'opening_balance': str(self.opening_balance).strip(),
+            'opening_date': str(self.opening_date)
+        }
 
-class Category(BaseModel):
+        return data
+
+    import json
+    def to_json(self):
+        print('foobaaaar')
+        data = {
+            'id': self.id,
+            'name': str(self.name).strip(),
+            'type': str(self.type).strip(),
+            'on_budget': str(self.on_budget).strip(),
+            'opening_balance': str(self.opening_balance).strip(),
+            'opening_date': str(self.opening_date)
+        }
+
+        print(json.dumps(data))
+        return json.dumps(data)
+
+
+    def __str__(self):
+        print('repr yo ass')
+        return "{}, {}, {}, {}, {}".format(
+            self.id,
+            self.name,
+            self.type,
+            str(self.opening_balance),
+            self.opening_date
+        )
+
+
+class Category(db.Model):
     """Model for a budget category"""
     name = CharField()
     parent = ForeignKeyField('self', null=True, related_name = 'children')
@@ -46,8 +86,24 @@ class Category(BaseModel):
         """Returns categories with no parent."""
         return Category.select().where(parent == None)
 
+    @property
+    def serialize(self):
+        data = {
+            'id': self.id,
+            'name': str(self.name).strip(),
+            'parent': str(self.parent_id).strip(),
+        }
 
-class Transaction(BaseModel):
+        return data
+
+    def __repr__(self):
+        return "{}, {}, {}".format(
+            self.id,
+            self.name,
+            self.parent_id,
+        )
+
+class Transaction(db.Model):
     acct_from = ForeignKeyField(Account, related_name='outgoing')
     is_transfer = BooleanField(default=False)
     acct_to = ForeignKeyField(Account, related_name='incoming', null=True)
@@ -58,11 +114,29 @@ class Transaction(BaseModel):
     amount = DecimalField()
     date = DateField(default=datetime.datetime.now)
 
+    @property
+    def serialize(self):
+        data = {
+            'id': self.id,
+            'acct_from': self.acct_from_id,
+            'is_transfer': self.is_transfer,
+            'acct_to': self.acct_to_id,
+            'category': self.category_id,
+            'payee': str(self.payee).strip(),
+            'memo': str(self.memo).strip(),
+            'is_cleared': self.is_cleared,
+            'amount': str(self.amount),
+            'date': str(self.date)
+        }
 
-class BudgetPeriod(BaseModel):
+        return data
+
+
+class BudgetPeriod(db.Model):
     name = CharField()          # e.g. August 2016
     start_date = DateField()    # Denotes teh starting date of period
     num_days = IntegerField()   # Number of days in the budget period
+
     def get_budget(self):
         """
         Retrieves budget entries for all categories for current period
@@ -82,7 +156,19 @@ class BudgetPeriod(BaseModel):
                 'budgeted': t.budgeted, 'balance': t.budgeted + t.outflows}
                 for t in txns]
 
-class BudgetEntry(BaseModel):
+    @property
+    def serialize(self):
+        data = {
+            'id': self.id,
+            'name': self.name,
+            'start_date': (self.start_date),
+            'num_days': self.num_days,
+        }
+
+        return data
+
+
+class BudgetEntry(db.Model):
     """One entry in the budget for a period"""
     period = ForeignKeyField(BudgetPeriod, related_name = 'entries')
     category = ForeignKeyField(Category)
@@ -102,14 +188,18 @@ class BudgetEntry(BaseModel):
                 'outflows': total.outflows,
                 'balance': self.budgeted + total.outflows}
 
+    @property
+    def serialize(self):
+        data = {
+            'id': self.id,
+            'period': self.period_id,
+            'category': self.category_id,
+            'budgeted': str(self.budgeted)
+        }
 
+        return data
 
-
-if __name__ == '__main__':
-    db.connect()
-    db.create_tables([Account, Transaction, Category, BudgetPeriod, BudgetEntry])
-    print('Created tables '+str(db.get_tables()))
-
+def create_test_data():
     acct = Account.create(name='PEFCU Checking', type='checking', on_budget=True, opening_balance=0.0)
     acct2 = Account.create(name='PEFCU Visa', type='cc', on_budget=True, opening_balance=0.0)
 
@@ -142,8 +232,11 @@ if __name__ == '__main__':
                                     is_transfer=False,
                                     payee = 'Supermarket')
                 )
-    # print([e.category.name+': $'+str(e.amount) for e in budgetPeriod.entries])
-    # print(budgetEntry1.get_full_entry())
-
-    print(budgetPeriod.get_budget())
-    db.close()
+# if __name__ == '__main__':
+#     db.connect()
+#     db.create_tables([Account, Transaction, Category, BudgetPeriod, BudgetEntry])
+#     print('Created tables '+str(db.get_tables()))
+#     create_test_data()
+#
+#     print(budgetPeriod.get_budget())
+#     db.close()
