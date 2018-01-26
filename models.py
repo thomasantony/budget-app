@@ -1,3 +1,4 @@
+import json
 import datetime
 import calendar
 from peewee import *
@@ -6,12 +7,6 @@ from decimal import Decimal
 from flask_peewee.utils import get_dictionary_from_model
 
 from app import db
-
-# class db.Model(db.Model):
-#     """Base class for all models"""
-#     class Meta:
-#         database = db
-
 
 class Account(db.Model):
     name = CharField(unique=True)
@@ -22,23 +17,27 @@ class Account(db.Model):
 
     def ledger(self):
         """Returns combination of all transactions and transfers"""
-        txns = (Transaction.select()
-                           .where(
-                           (Transaction.acct_from == self)
-                           | (Transaction.acct_to == self)
-                           )
-                           .order_by(Transaction.date))
-        running_balance = Decimal(self.opening_balance)
-        for t in txns:
-            if t.acct_from == self:
-                t.amount = -t.amount
-            running_balance += Decimal(t.amount)
-            t.running_balance = running_balance
-            yield t
+        txns = Transaction \
+                .select(Transaction, Account)\
+                .join(Account) \
+                .where(Transaction.acct == self) \
+                .order_by(Transaction.date)
+        # txns = self.transactions.order_by(Transaction.date)
+        return txns
+
+    @property
+    def balance(self):
+        try:
+            txn = (Transaction.select().where(Transaction.acct == self)
+                               .order_by(Transaction.date.desc())).get()
+            balance = txn.current_balance
+        except:
+            balance = self.opening_balance
+
+        return balance
 
     @property
     def serialize(self):
-        print('serialize yo ass')
         data = {
             'id': self.id,
             'name': str(self.name).strip(),
@@ -47,27 +46,15 @@ class Account(db.Model):
             'opening_balance': str(self.opening_balance).strip(),
             'opening_date': str(self.opening_date)
         }
-
         return data
 
-    import json
-    def to_json(self):
-        print('foobaaaar')
-        data = {
-            'id': self.id,
-            'name': str(self.name).strip(),
-            'type': str(self.type).strip(),
-            'on_budget': str(self.on_budget).strip(),
-            'opening_balance': str(self.opening_balance).strip(),
-            'opening_date': str(self.opening_date)
-        }
-
-        print(json.dumps(data))
+    def to_json(self, include_balance=False):
+        data = self.serialize
+        if include_balance:
+            data['balance'] = str(self.balance).strip()
         return json.dumps(data)
 
-
     def __str__(self):
-        print('repr yo ass')
         return "{}, {}, {}, {}, {}".format(
             self.id,
             self.name,
@@ -104,15 +91,19 @@ class Category(db.Model):
         )
 
 class Transaction(db.Model):
-    acct_from = ForeignKeyField(Account, related_name='outgoing')
-    is_transfer = BooleanField(default=False)
-    acct_to = ForeignKeyField(Account, related_name='incoming', null=True)
+    acct = ForeignKeyField(Account, related_name='transactions')
     category = ForeignKeyField(Category, related_name='transactions', null=True)
     payee = CharField(null=True) # Either this or ^^
     memo = CharField(null=True)
+    is_transfer = BooleanField(default=False)
     is_cleared = BooleanField(default=False)
-    amount = DecimalField()
     date = DateField(default=datetime.datetime.now)
+    prev_balance = DecimalField()
+    amount = DecimalField()
+    current_balance = DecimalField()
+
+    class Meta:
+        constraints = [Check('current_balance = prev_balance + amount')]
 
     @property
     def serialize(self):
@@ -131,6 +122,13 @@ class Transaction(db.Model):
 
         return data
 
+class Transfer(db.Model):
+    from_txn = ForeignKeyField(Transaction, primary_key=True, related_name='outgoing_transfer')
+    to_txn = ForeignKeyField(Transaction, related_name='incoming_transfer')
+    class Meta:
+        indexes = (
+            (('from_txn', 'to_txn'), True),
+        )
 
 class BudgetPeriod(db.Model):
     name = CharField()          # e.g. August 2016
