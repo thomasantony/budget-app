@@ -2,7 +2,7 @@ import calendar
 import datetime
 from peewee import SqliteDatabase
 
-from models import Account, Transaction, Category, BudgetPeriod, BudgetEntry
+from models import *
 
 DATABASE =  {
     'name': 'example.db',
@@ -13,10 +13,10 @@ DATABASE =  {
 db = SqliteDatabase(DATABASE['name'])
 
 db.connect()
-db.create_tables([Account, Transaction, Category, BudgetPeriod, BudgetEntry], safe=True)
+db.create_tables([Account, Transaction, Transfer, Category, BudgetPeriod, BudgetEntry], safe=True)
 
 acct = Account.create(name='My Checking', type='checking', on_budget=True, opening_balance=0.0)
-acct2 = Account.create(name='My Credit card', type='cc', on_budget=True, opening_balance=0.0)
+acct2 = Account.create(name='My Credit card', type='creditCard', on_budget=True, opening_balance=0.0)
 
 checking = Account.select().where(Account.name == 'My Checking').get()
 cc = Account.select().where(Account.name == 'My Credit card').get()

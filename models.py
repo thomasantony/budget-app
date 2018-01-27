@@ -7,6 +7,7 @@ from decimal import Decimal
 from flask_peewee.utils import get_dictionary_from_model
 
 from app import db
+from playhouse.hybrid import hybrid_property
 
 class Account(db.Model):
     name = CharField(unique=True)
@@ -25,7 +26,7 @@ class Account(db.Model):
         # txns = self.transactions.order_by(Transaction.date)
         return txns
 
-    @property
+    @hybrid_property
     def balance(self):
         try:
             txn = (Transaction.select().where(Transaction.acct == self)
@@ -36,22 +37,22 @@ class Account(db.Model):
 
         return balance
 
-    @property
-    def serialize(self):
+    def serialize(self, include_balance=False):
         data = {
             'id': self.id,
             'name': str(self.name).strip(),
             'type': str(self.type).strip(),
             'on_budget': str(self.on_budget).strip(),
-            'opening_balance': str(self.opening_balance).strip(),
+            'opening_balance': float(self.opening_balance),
             'opening_date': str(self.opening_date)
         }
+        if include_balance:
+            data['balance'] = float(self.balance)
+
         return data
 
     def to_json(self, include_balance=False):
-        data = self.serialize
-        if include_balance:
-            data['balance'] = str(self.balance).strip()
+        data = self.serialize(include_balance)
         return json.dumps(data)
 
     def __str__(self):
@@ -105,19 +106,19 @@ class Transaction(db.Model):
     class Meta:
         constraints = [Check('current_balance = prev_balance + amount')]
 
-    @property
     def serialize(self):
         data = {
             'id': self.id,
-            'acct_from': self.acct_from_id,
+            'account_id': self.acct_id,
             'is_transfer': self.is_transfer,
-            'acct_to': self.acct_to_id,
             'category': self.category_id,
             'payee': str(self.payee).strip(),
             'memo': str(self.memo).strip(),
             'is_cleared': self.is_cleared,
-            'amount': str(self.amount),
-            'date': str(self.date)
+            'date': str(self.date),
+            'prev_balance': float(self.prev_balance),
+            'amount': float(self.amount),
+            'current_balance': float(self.current_balance),
         }
 
         return data
